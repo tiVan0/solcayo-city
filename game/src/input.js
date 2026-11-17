@@ -1,53 +1,44 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
-
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
-
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
-
-export function createInput(target) {
-  let left = false;
-  let right = false;
-  let actions = 0;
-
-  window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
-  });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
-  });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
-  });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
-  });
-
-  return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
+// Solcayo — keyboard + mouse input, translated into game actions.
+export function createInput() {
+  const keys = new Set();
+  const pressed = new Set(); // edge-triggered: consumed once by the game loop
+  const input = {
+    keys, pressed,
+    up: false, down: false, left: false, right: false,
+    run: false, handbrake: false,
+    interactPressed: false, punchPressed: false, pausePressed: false,
+    mutePressed: false, anyKey: false,
+    mouse: { x: 0, y: 0, clicked: false },
+    attach(canvas) {
+      window.addEventListener('keydown', (e) => {
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault();
+        if (!e.repeat) { keys.add(e.key.toLowerCase()); pressed.add(e.key.toLowerCase()); }
+        input.anyKey = true;
+      });
+      window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+      canvas.addEventListener('pointerdown', (e) => {
+        const r = canvas.getBoundingClientRect();
+        input.mouse.x = e.clientX - r.left; input.mouse.y = e.clientY - r.top;
+        input.mouse.clicked = true; input.anyKey = true;
+      });
+      window.addEventListener('blur', () => keys.clear());
     },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
+    // Called once per fixed tick: fold raw keys into stable action flags.
+    poll() {
+      const k = keys;
+      input.up = k.has('w') || k.has('arrowup');
+      input.down = k.has('s') || k.has('arrowdown');
+      input.left = k.has('a') || k.has('arrowleft');
+      input.right = k.has('d') || k.has('arrowright');
+      input.run = k.has('shift');
+      input.handbrake = k.has(' ');
+      input.interactPressed = pressed.has('e');
+      input.punchPressed = pressed.has(' ') || pressed.has('j');
+      input.pausePressed = pressed.has('escape') || pressed.has('p');
+      input.mutePressed = pressed.has('m');
+      pressed.clear();
     },
+    consumeClick() { const c = input.mouse.clicked; input.mouse.clicked = false; return c; },
   };
+  return input;
 }
